@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ilhembekkr.github.io/sitemap.xml
+Sitemap: https://ilhembekkr.github.io/graphrag-article/sitemap.xml
