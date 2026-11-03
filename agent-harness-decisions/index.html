@@ -1,0 +1,1411 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent harnesses: six engineering decisions, read from DeepSeek's Super-agent design</title>
+    <meta name="description" content="A case study in engineering judgement: six architecture decisions from DeepSeek's Super-agent design doc — the constraint, the obvious answer they rejected, what the choice cost, and the skill left over." />
+    <meta name="author" content="Ilhem Bekkar" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <link rel="canonical" href="https://ilhembekkr.github.io/agent-harness-decisions/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Agent harnesses: six engineering decisions, read from DeepSeek's Super-agent design" />
+    <meta property="og:description" content="The difference between the hype answer and the engineered answer, shown six times: attention as the real constraint, splitting by responsiveness, cheap filters before expensive ones, removing the bottleneck from the path, measuring arrival rate, and addressing context instead of carrying it." />
+    <meta property="og:url" content="https://ilhembekkr.github.io/agent-harness-decisions/" />
+    <meta property="og:site_name" content="Ilhem Bekkar" />
+    <meta property="og:image" content="https://ilhembekkr.github.io/images/ilhem-bekkar-og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="1200" />
+    <meta property="og:image:alt" content="Portrait of Ilhem Bekkar" />
+    <meta property="article:published_time" content="2026-11-03" />
+    <meta property="article:modified_time" content="2026-11-03" />
+    <meta property="article:author" content="https://www.linkedin.com/in/ilhem-bekkar-8927a11b2/" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:image" content="https://ilhembekkr.github.io/images/ilhem-bekkar-og.jpg" />
+    <meta name="twitter:image:alt" content="Portrait of Ilhem Bekkar" />
+    <meta name="twitter:title" content="Agent harnesses: six engineering decisions" />
+    <meta name="twitter:description" content="Six architecture decisions from DeepSeek's Super-agent design doc, each with the constraint, the rejected obvious answer, the cost, and the transferable skill." />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Agent harnesses: six engineering decisions, read from DeepSeek's Super-agent design",
+        "description": "A case study in engineering judgement: six architecture decisions from DeepSeek's Super-agent design doc — the constraint, the obvious answer they rejected, what the choice cost, and the skill left over.",
+        "url": "https://ilhembekkr.github.io/agent-harness-decisions/",
+        "mainEntityOfPage": {
+          "@type": "WebPage",
+          "@id": "https://ilhembekkr.github.io/agent-harness-decisions/"
+        },
+        "image": "https://ilhembekkr.github.io/images/ilhem-bekkar-og.jpg",
+        "datePublished": "2026-11-03",
+        "dateModified": "2026-11-03",
+        "inLanguage": "en",
+        "author": {
+          "@type": "Person",
+          "@id": "https://ilhembekkr.github.io/#person",
+          "name": "Ilhem Bekkar",
+          "url": "https://ilhembekkr.github.io/",
+          "jobTitle": "Agentic AI & Optimization Engineer",
+          "worksFor": [
+            { "@type": "Organization", "name": "Omundu", "url": "https://omundu.ai" },
+            { "@type": "CollegeOrUniversity", "name": "Université Claude Bernard Lyon 1" }
+          ],
+          "sameAs": ["https://www.linkedin.com/in/ilhem-bekkar-8927a11b2/"]
+        },
+        "about": [
+          { "@type": "Thing", "name": "AI agent harness" },
+          { "@type": "Thing", "name": "Agent orchestration" },
+          { "@type": "Thing", "name": "Context engineering" },
+          { "@type": "Thing", "name": "Software architecture" }
+        ],
+        "citation": [
+          {
+            "@type": "Article",
+            "name": "Exploring Super-agent Design (DeepSeek Harness team)",
+            "url": "https://mp.weixin.qq.com/s/zoS7GlReWPhfCjENGxXCdg"
+          },
+          {
+            "@type": "SoftwareSourceCode",
+            "name": "deepseek-ai/dsh-superagent-prototype",
+            "url": "https://github.com/deepseek-ai/dsh-superagent-prototype"
+          },
+          {
+            "@type": "Article",
+            "name": "DeepSeek Super-agent: Router-Worker Architecture",
+            "url": "https://agentspulse.github.io/tutorials/deepseek-super-agent-architecture/"
+          },
+          {
+            "@type": "Article",
+            "name": "DeepSeek's Super-agent: One Router, Many Workers",
+            "url": "https://cellcog.ai/blog/deepseek-super-agent/"
+          },
+          {
+            "@type": "Article",
+            "name": "DeepSeek open-sources Super-Agent, an experimental coding agent",
+            "url": "https://thenextweb.com/news/deepseek-super-agent-open-source-coding-agent"
+          },
+          {
+            "@type": "TechArticle",
+            "name": "Claude Code — Orchestrate teams of Claude Code sessions",
+            "url": "https://code.claude.com/docs/en/agent-teams"
+          },
+          {
+            "@type": "TechArticle",
+            "name": "OpenAI Codex — Review GitHub pull requests",
+            "url": "https://developers.openai.com/codex/integrations/github"
+          }
+        ]
+      }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --bg-soft: #f8fafc;
+        --text: #0f172a;
+        --text-muted: #475569;
+        --text-faint: #64748b; /* ≥4.5:1 on --bg and --bg-soft */
+        --accent: #2563eb;
+        --accent-light: #eff6ff;
+        --accent-dark: #1d4ed8;
+        --border: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --code-bg: #0f172a;
+        --code-text: #e2e8f0;
+        --success: #16a34a;
+        --success-light: #f0fdf4;
+        --danger: #dc2626;
+        --danger-light: #fef2f2;
+        --warning: #d97706;
+        --warning-light: #fffbeb;
+        /* darker shades for small label text on the light callout backgrounds */
+        --success-text: #15803d;
+        --danger-text: #b91c1c;
+        --warning-text: #b45309;
+        --focus: #2563eb;
+      }
+
+      * { box-sizing: border-box; }
+      @media (prefers-reduced-motion: no-preference) {
+        html { scroll-behavior: smooth; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { transition: none !important; animation: none !important; }
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+        border-radius: 3px;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px; height: 1px;
+        padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0 0 0 0);
+        white-space: nowrap; border: 0;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        font-size: 18px;
+        line-height: 1.7;
+        overflow-wrap: break-word;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* layout */
+      .page { max-width: 1180px; margin: 0 auto; padding: 64px 32px 120px; }
+      .article { max-width: 740px; margin: 0 auto; }
+      .article > * { margin-left: auto; margin-right: auto; }
+
+      /* header */
+      .back-home {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-decoration: none;
+        margin-bottom: 32px;
+        transition: color 0.15s ease;
+      }
+      .back-home:hover { color: var(--accent); }
+      .back-home svg { width: 16px; height: 16px; transition: transform 0.15s ease; }
+      .back-home:hover svg { transform: translateX(-3px); }
+      .eyebrow {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        color: var(--accent);
+        text-transform: uppercase;
+        margin-bottom: 18px;
+      }
+      h1.title {
+        font-size: 2.85rem;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        line-height: 1.1;
+        margin: 0 0 18px;
+        color: var(--text);
+      }
+      .dek {
+        font-size: 1.25rem;
+        line-height: 1.55;
+        color: var(--text-muted);
+        margin: 0 0 32px;
+        font-weight: 400;
+      }
+      .meta {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        font-size: 0.92rem;
+        color: var(--text-faint);
+        padding-bottom: 28px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 48px;
+      }
+      .meta .dot { color: var(--border-strong); }
+
+      /* byline */
+      .byline {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 0 0 32px;
+      }
+      .byline-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        object-fit: cover;
+        object-position: top center;
+        border: 1px solid var(--border);
+        background: var(--bg-soft);
+        flex-shrink: 0;
+      }
+      .byline-text { line-height: 1.4; }
+      .byline-name {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .byline-role {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+      }
+      .byline-role a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--border-strong); }
+      .byline-role a:hover { color: var(--accent); border-color: var(--accent); }
+
+      .byline-social {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        margin-left: 8px;
+        color: var(--text-muted);
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        transition: color 0.15s, background 0.15s, border-color 0.15s;
+      }
+      .byline-social:hover {
+        color: #fff;
+        background: #0a66c2; /* LinkedIn blue */
+        border-color: #0a66c2;
+      }
+      .byline-social svg { width: 15px; height: 15px; }
+
+      /* TOC */
+      .toc {
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin: 0 0 56px;
+        font-size: 0.95rem;
+      }
+      .toc-label {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 12px;
+      }
+      .toc ol { margin: 0; padding-left: 22px; }
+      .toc li { margin: 4px 0; }
+      .toc a { color: var(--text); text-decoration: none; }
+      .toc a:hover { color: var(--accent); text-decoration: underline; }
+
+      /* prose */
+      h2 {
+        font-size: 1.85rem;
+        font-weight: 700;
+        letter-spacing: -0.012em;
+        line-height: 1.2;
+        margin: 64px 0 18px;
+        color: var(--text);
+        scroll-margin-top: 24px;
+      }
+      h3 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 36px 0 12px;
+        color: var(--text);
+      }
+      p {
+        margin: 0 0 18px;
+        color: var(--text);
+      }
+      a { color: var(--accent); }
+      a:hover { color: var(--accent-dark); }
+      strong { font-weight: 600; color: var(--text); }
+      em { color: var(--text-muted); }
+
+      ul, ol { margin: 0 0 18px; padding-left: 24px; }
+      li { margin-bottom: 6px; }
+      li::marker { color: var(--text-faint); }
+
+      /* inline code */
+      :not(pre) > code {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.88em;
+        background: #f1f5f9;
+        color: #0f172a;
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+      }
+
+      /* code block */
+      pre {
+        background: var(--code-bg);
+        color: var(--code-text);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.86rem;
+        line-height: 1.6;
+        padding: 20px 22px;
+        border-radius: 10px;
+        overflow-x: auto;
+        margin: 24px 0;
+      }
+      pre code { background: none; border: none; color: inherit; padding: 0; }
+      .tok-c { color: #94a3b8; font-style: italic; }
+      .tok-k { color: #c4b5fd; }
+      .tok-s { color: #86efac; }
+      .tok-n { color: #fbbf24; }
+      .tok-f { color: #67e8f9; }
+
+      /* official prompt card */
+      .prompt-card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-soft);
+        padding: 16px 20px;
+        margin: 24px 0;
+      }
+      .prompt-card .prompt-summary {
+        font-size: 0.95rem;
+        color: var(--text-muted);
+        line-height: 1.55;
+      }
+      .prompt-card .prompt-summary strong { color: var(--text); }
+      .prompt-card details {
+        margin-top: 12px;
+        border-top: 1px dashed var(--border);
+        padding-top: 12px;
+      }
+      .prompt-card details > summary {
+        cursor: pointer;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--accent);
+        list-style: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        user-select: none;
+      }
+      .prompt-card details > summary::-webkit-details-marker { display: none; }
+      .prompt-card details > summary::before {
+        content: "▸";
+        font-size: 0.8em;
+        transition: transform 0.15s ease;
+        display: inline-block;
+      }
+      .prompt-card details[open] > summary::before { transform: rotate(90deg); }
+      .prompt-card details pre { margin: 14px 0 10px; font-size: 0.78rem; }
+
+      .faq { margin: 24px 0; border-top: 1px solid var(--border); }
+      .faq-item { border-bottom: 1px solid var(--border); }
+      .faq-item > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 16px 4px;
+        user-select: none;
+      }
+      .faq-item > summary::-webkit-details-marker { display: none; }
+      .faq-item > summary::before {
+        content: "▸";
+        color: var(--accent);
+        font-size: 0.85em;
+        transition: transform 0.15s ease;
+        display: inline-block;
+        flex: none;
+      }
+      .faq-item[open] > summary::before { transform: rotate(90deg); }
+      .faq-item > summary:hover h3 { color: var(--accent); }
+      .faq-item > summary h3 { margin: 0; font-size: 1.05rem; line-height: 1.4; }
+      .faq-item > p, .faq-item > ul { margin: 0 0 18px 26px; }
+      .prompt-source {
+        font-size: 0.82rem;
+        color: var(--text-faint);
+        margin-top: 8px;
+      }
+      .prompt-source a {
+        color: var(--text-muted);
+        text-decoration: none;
+        border-bottom: 1px dotted var(--border-strong);
+      }
+      .prompt-source a:hover { color: var(--accent); border-color: var(--accent); }
+
+      /* callout */
+      .callout {
+        border-left: 3px solid var(--accent);
+        background: var(--accent-light);
+        padding: 16px 20px;
+        border-radius: 0 8px 8px 0;
+        margin: 28px 0;
+        color: var(--text);
+      }
+      .callout.warn { border-color: var(--warning); background: var(--warning-light); }
+      .callout.danger { border-color: var(--danger); background: var(--danger-light); }
+      .callout.ok { border-color: var(--success); background: var(--success-light); }
+      .callout > .label {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        display: block;
+        margin-bottom: 6px;
+      }
+      .callout.warn > .label { color: var(--warning-text); }
+      .callout.danger > .label { color: var(--danger-text); }
+      .callout.ok > .label { color: var(--success-text); }
+      .callout p:last-child { margin-bottom: 0; }
+      .callout > h2.label { margin: 0 0 6px; line-height: inherit; }
+
+      /* tables */
+      .table-wrap {
+        margin: 28px 0;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.94rem;
+      }
+      th, td {
+        text-align: left;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        background: var(--bg-soft);
+        font-weight: 600;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+      }
+      /* row headers keep the look of a bold body cell */
+      tbody th {
+        background: none;
+        font-size: inherit;
+        text-transform: none;
+        letter-spacing: normal;
+        font-weight: inherit;
+        color: var(--text);
+      }
+      thead td { background: var(--bg-soft); }
+      tr:last-child td, tr:last-child th { border-bottom: none; }
+
+      /* figures */
+      figure { margin: 36px 0; }
+      figure.wide {
+        max-width: 960px;
+        margin-left: calc((740px - 960px) / 2);
+        margin-right: calc((740px - 960px) / 2);
+      }
+      /* photographic figures stay inside the text column — only synthesized diagrams go wide */
+      figure.wide:has(img) {
+        max-width: 100%;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #fff;
+      }
+      figure svg { display: block; width: 100%; height: auto; }
+      figcaption {
+        font-size: 0.88rem;
+        color: var(--text-faint);
+        text-align: center;
+        margin-top: 12px;
+        line-height: 1.5;
+      }
+
+      .diagram {
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 24px;
+      }
+
+      .footer {
+        margin-top: 80px;
+        padding-top: 32px;
+        border-top: 1px solid var(--border);
+        color: var(--text-faint);
+        font-size: 0.9rem;
+      }
+      .footer-author {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px 22px;
+      }
+      .footer-author img {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        object-fit: cover;
+        object-position: top center;
+        border: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .footer-author-name {
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .footer-author-role {
+        font-size: 0.92rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+      .footer-author-blurb {
+        font-size: 0.88rem;
+        color: var(--text-faint);
+        margin-top: 6px;
+        line-height: 1.5;
+      }
+      .footer-thanks {
+        text-align: center;
+        margin-top: 28px;
+        font-size: 0.85rem;
+        color: var(--text-faint);
+      }
+
+      @media (max-width: 1040px) {
+        figure.wide { max-width: 100%; margin-left: 0; margin-right: 0; }
+      }
+      @media (max-width: 720px) {
+        .page { padding: 40px 20px 80px; }
+        body { font-size: 17px; }
+        h1.title { font-size: 2.1rem; }
+        .dek { font-size: 1.1rem; }
+        h2 { font-size: 1.5rem; }
+        h3 { font-size: 1.15rem; }
+        pre { font-size: 0.78rem; }
+        /* keep tables and diagrams legible: scroll sideways instead of crushing */
+        .table-wrap table { min-width: 560px; }
+        .diagram { padding: 12px; overflow-x: auto; }
+        .diagram svg { min-width: 760px; }
+        .diagram svg[viewBox="0 0 1100 560"] { min-width: 880px; }
+      }
+      @media (max-width: 420px) {
+        .footer-author { flex-direction: column; align-items: flex-start; }
+      }
+    </style>  </head>
+  <body>
+    <main class="page">
+      <article class="article">
+
+        <header>
+        <a class="back-home" href="https://ilhembekkr.github.io/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          Ilhem Bekkar
+        </a>
+        <div class="eyebrow">Agent harnesses &nbsp;·&nbsp; Architecture &nbsp;·&nbsp; Engineering judgement</div>
+        <h1 class="title">Agent harnesses: six engineering decisions, read from DeepSeek's Super-agent design</h1>
+        <p class="dek">
+          Most agent architecture gets decided by what sounds impressive. DeepSeek's Harness team published the reasoning behind theirs — the constraint they hit each time, the obvious fix they rejected, and what the choice cost them. Six decisions, and the skill that's left when you've forgotten the details.
+        </p>
+
+        <div class="byline">
+          <img class="byline-avatar" src="images/ilhem-bekkar.jpg" alt="Portrait of Ilhem Bekkar" width="56" height="56" />
+          <div class="byline-text">
+            <div class="byline-name">
+              Ilhem Bekkar
+              <a
+                class="byline-social"
+                href="https://www.linkedin.com/in/ilhem-bekkar-8927a11b2/"
+                target="_blank"
+                rel="noopener"
+                aria-label="LinkedIn"
+                title="LinkedIn"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/>
+                </svg>
+              </a>
+            </div>
+            <div class="byline-role">Agentic AI &amp; Optimization Engineer @ Omundu × Université Claude Bernard Lyon 1</div>
+          </div>
+        </div>
+
+        <div class="meta">
+          <time datetime="2026-11-03">November 3, 2026</time>
+          <span class="dot" aria-hidden="true">·</span>
+          <span>~15 min read</span>
+          <span class="dot" aria-hidden="true">·</span>
+          <span>Case study</span>
+        </div>
+        </header>
+
+        <section class="callout" aria-labelledby="what-is-a-harness">
+          <h2 class="label" id="what-is-a-harness">What is an agent harness?</h2>
+          <p>
+            The <strong>harness</strong> is everything around the model. The loop that decides when to call it. The tools it can reach. What enters its context and what gets dropped. How work starts, stops and resumes. Who is allowed to approve what. The model writes the code; the harness decides <em>which</em> code gets written, when, and whether a human had to sit there while it happened. Two teams running the same model can end up with completely different systems, and the difference is almost always the harness.
+          </p>
+          <p>
+            On October 31, 2026, the <a href="https://www.deepseek.com/en/harness/" target="_blank" rel="noopener">DeepSeek Harness</a> team published a design document for one of these — <a href="https://mp.weixin.qq.com/s/zoS7GlReWPhfCjENGxXCdg" target="_blank" rel="noopener">"Exploring Super-agent Design"</a>, in Chinese — together with a prototype, <a href="https://github.com/deepseek-ai/dsh-superagent-prototype" target="_blank" rel="noopener">dsh-superagent-prototype</a>: MIT-licensed, and explicitly a research artifact rather than a product. This article is not about the prototype. It is about the reasoning in the document. Full source list in <a href="#references">§10</a>.
+          </p>
+        </section>
+
+        <nav class="toc" aria-label="Table of contents">
+          <div class="toc-label">Contents</div>
+          <ol>
+            <li><a href="#frame">The hype answer and the engineered answer</a></li>
+            <li><a href="#attention">The constraint nobody measures</a></li>
+            <li><a href="#split">The component that talks must not do the work</a></li>
+            <li><a href="#filter">Don't let the model decide what to look at</a></li>
+            <li><a href="#bypass">When something is a bottleneck, take it out of the path</a></li>
+            <li><a href="#load">Measure the arrival rate before you scale anything</a></li>
+            <li><a href="#context">Stop fitting context — address it instead</a></li>
+            <li><a href="#unsolved">What they didn't solve</a></li>
+            <li><a href="#skills">The six skills, collected</a></li>
+            <li><a href="#references">References</a></li>
+            <li><a href="#faq">Frequently asked questions</a></li>
+          </ol>
+        </nav>
+
+        <section aria-labelledby="frame">
+        <h2 id="frame">1. The hype answer and the engineered answer</h2>
+
+        <p>
+          Give two people the same problem — "our agent system is too slow" — and watch what they reach for.
+        </p>
+
+        <p>
+          The first reaches for the thing that looks like progress. A bigger model. More agents, running in parallel. A framework with <em>orchestration</em> in the description. The move is always additive, and it always lands on the component that was already the most impressive part of the system.
+        </p>
+
+        <p>
+          The second asks a duller question: what is actually limiting this? Not what feels slow — what is <strong>binding</strong>. Then they go look at where that constraint sits. More often than not the fix turns out to be removing something rather than adding it, and it is rarely the part anyone wanted to talk about.
+        </p>
+
+        <p>
+          That is the whole difference, and it isn't about intelligence or seniority. It's about which question you ask first. The trouble is that the first habit is easy to copy and the second one is usually invisible — you see the architecture a team shipped, not the four options they threw away getting there.
+        </p>
+
+        <p>
+          Which is why DeepSeek's document is worth reading closely. It makes the second habit visible six times in a row. Each time, the obvious answer was available and cheap. Each time they went the other way. And each time they wrote down what it cost them, which is the part almost nobody publishes.
+        </p>
+
+        <p>
+          What follows is those six decisions. For each one: the situation, the answer most people reach for, what they did instead, what it cost — and the skill that survives after you've forgotten everything about DeepSeek.
+        </p>
+        </section>
+
+        <section aria-labelledby="attention">
+        <h2 id="attention">2. The constraint nobody measures</h2>
+
+        <p>
+          <strong>The situation.</strong> You can run as many coding agents as you're willing to pay for. In practice people run three, maybe five. Past that, throughput goes down rather than up — and not because any machine is saturated.
+        </p>
+
+        <p>
+          The reason is that each session needs a human to read it. Sessions don't share context, so the person is the only thing connecting them. Five agents means five transcripts, five sets of decisions to follow, five places where work can quietly stall while looking busy. The developer stops being a developer and becomes the integration layer.
+        </p>
+
+        <p>
+          <strong>The hype answer.</strong> Run more agents in parallel, and build a dashboard so you can see all of them at once.
+        </p>
+
+        <p>
+          A dashboard showing five sessions isn't a fix. It's the same load delivered faster.
+        </p>
+
+        <p>
+          <strong>What they did.</strong> They named the constraint — roughly three to five concurrent sessions per person — and made it the quantity the system optimises. Not task success rate. Not token spend. Attention.
+        </p>
+
+        <p>
+          Everything downstream follows from that. One resident coordinator you talk to, instead of <em>N</em> sessions you address individually. Agents that stay silent unless they have something that genuinely needs a human. A dashboard that lists only the items requiring a decision, rather than everything in flight. The stated goal, in the prototype's own <a href="https://github.com/deepseek-ai/dsh-superagent-prototype/blob/main/docs/000-philosophy.md" target="_blank" rel="noopener">design philosophy document</a>: take as little human attention as possible, and give as much value as possible.
+        </p>
+
+        <p>
+          <strong>What it cost.</strong> You stop seeing what the system is doing most of the time. A system designed never to interrupt you is also a system you can't glance at. When something does go wrong, you aren't catching it mid-flight — you're reconstructing it afterwards from logs, which is a different and slower skill.
+        </p>
+
+        <div class="callout ok">
+          <span class="label">The skill</span>
+          <p style="margin:0">
+            The binding constraint is often the one with no metric attached. Compute, latency and token spend are instrumented by default, so they win every argument. Human attention isn't instrumented at all, so it loses — even when it's the thing actually capping throughput. Before optimising anything, ask what runs out first, then ask whether you're measuring it.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="split">
+        <h2 id="split">3. The component that talks must not do the work</h2>
+
+        <p>
+          <strong>The situation.</strong> Something has to receive messages from people and decide what happens next. The obvious shape is that this something is also your best agent: it reads the request, writes the code, and replies. One capable thing doing everything.
+        </p>
+
+        <p>
+          That shape breaks the moment it's busy. While your coordinator is running a test suite, nobody can reach it. New requests queue behind work that has nothing to do with them.
+        </p>
+
+        <p>
+          <strong>The hype answer.</strong> Make the coordinator the strongest model you have, with every tool attached, because it's the brain of the system.
+        </p>
+
+        <p>
+          <strong>What they did.</strong> They split the system by <em>responsiveness requirement</em> rather than by capability.
+        </p>
+
+        <p>
+          The <strong>Router</strong> is resident. It receives every human message from every channel, decides what should happen, holds state across tasks, and sends the replies. It runs a lighter model, and may not have shell access at all.
+        </p>
+
+        <p>
+          <strong>Workers</strong> are disposable. One per task, each with isolated context, the full execution toolset, and the strongest model. They never speak to a user. They report to the Router, and the Router answers on their behalf.
+        </p>
+
+        <figure class="wide">
+          <div class="diagram" role="region" tabindex="0" aria-label="Router and Worker responsibilities">
+            <svg viewBox="0 0 1100 470" xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,system-ui,sans-serif; display:block; width:100%; height:auto;" role="img" aria-label="A resident Router receives all human channels, holds cross-task state and replies; disposable Workers hold isolated context, the full toolset and the strongest model, and report to the Router.">
+              <defs>
+                <marker id="rw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+                </marker>
+                <filter id="rw-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.08"/>
+                </filter>
+              </defs>
+
+              <text x="12" y="18" font-size="13" font-weight="600" fill="#475569" letter-spacing="1.5">HUMAN CHANNELS</text>
+              <text x="1088" y="18" font-size="13" fill="#64748b" text-anchor="end">one resident process · everything else is disposable</text>
+
+              <g filter="url(#rw-shadow)">
+                <rect x="24" y="40" width="190" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="119" y="66" text-anchor="middle" font-size="14" fill="#0f172a">Group chat</text>
+              </g>
+              <g filter="url(#rw-shadow)">
+                <rect x="24" y="96" width="190" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="119" y="122" text-anchor="middle" font-size="14" fill="#0f172a">PR / review comments</text>
+              </g>
+              <g filter="url(#rw-shadow)">
+                <rect x="24" y="152" width="190" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="119" y="178" text-anchor="middle" font-size="14" fill="#0f172a">Email · calendar</text>
+              </g>
+              <g filter="url(#rw-shadow)">
+                <rect x="24" y="208" width="190" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="119" y="234" text-anchor="middle" font-size="14" fill="#0f172a">CI results</text>
+              </g>
+
+              <path d="M 218 61 L 300 130" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#rw-arrow)"/>
+              <path d="M 218 117 L 300 138" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#rw-arrow)"/>
+              <path d="M 218 173 L 300 155" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#rw-arrow)"/>
+              <path d="M 218 229 L 300 165" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#rw-arrow)"/>
+
+              <g filter="url(#rw-shadow)">
+                <rect x="306" y="78" width="248" height="140" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.6"/>
+                <text x="430" y="110" text-anchor="middle" font-size="19" font-weight="700" fill="#0f172a">Router</text>
+                <text x="430" y="134" text-anchor="middle" font-size="13" fill="#2563eb" font-weight="600">resident · lighter model</text>
+                <line x1="330" y1="148" x2="530" y2="148" stroke="#bfdbfe" stroke-width="1"/>
+                <text x="430" y="170" text-anchor="middle" font-size="13" fill="#475569">talks to humans · dispatches</text>
+                <text x="430" y="190" text-anchor="middle" font-size="13" fill="#475569">holds state across tasks</text>
+                <text x="430" y="210" text-anchor="middle" font-size="13" fill="#b45309" font-weight="600">no shell · never writes code</text>
+              </g>
+              <text x="364" y="248" text-anchor="middle" font-size="13" fill="#64748b">must stay responsive</text>
+
+              <path d="M 558 118 L 640 86" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#rw-arrow)"/>
+              <path d="M 558 148 L 640 162" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#rw-arrow)"/>
+              <path d="M 558 178 L 640 238" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#rw-arrow)"/>
+
+              <g filter="url(#rw-shadow)">
+                <rect x="646" y="52" width="300" height="68" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="668" y="82" font-size="16" font-weight="700" fill="#0f172a">Worker · task A</text>
+                <text x="668" y="103" font-size="13" fill="#475569">isolated context · full tools · strongest model</text>
+              </g>
+              <g filter="url(#rw-shadow)">
+                <rect x="646" y="128" width="300" height="68" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="668" y="158" font-size="16" font-weight="700" fill="#0f172a">Worker · task B</text>
+                <text x="668" y="179" font-size="13" fill="#475569">isolated context · full tools · strongest model</text>
+              </g>
+              <g filter="url(#rw-shadow)">
+                <rect x="646" y="204" width="300" height="68" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="668" y="234" font-size="16" font-weight="700" fill="#0f172a">Worker · task C</text>
+                <text x="668" y="255" font-size="13" fill="#475569">isolated context · full tools · strongest model</text>
+              </g>
+              <text x="796" y="298" text-anchor="middle" font-size="13" fill="#64748b">may be slow · may be busy · never talks to a human</text>
+
+              <path d="M 946 272 C 1034 296 1034 334 500 334 L 500 226" stroke="#94a3b8" stroke-width="1.4" fill="none" stroke-dasharray="5 4" marker-end="url(#rw-arrow)"/>
+              <text x="760" y="352" text-anchor="middle" font-size="12.5" fill="#64748b">status reports — the Router answers on the Worker's behalf</text>
+
+              <text x="12" y="392" font-size="13" font-weight="600" fill="#475569" letter-spacing="1.5">WHAT THE ROUTER DOES NOT DO</text>
+              <rect x="24" y="404" width="1052" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.2"/>
+              <text x="44" y="430" font-size="14" fill="#0f172a">It never breaks a task into steps. It manages the relationship <tspan font-style="italic">between</tspan> tasks —</text>
+              <text x="44" y="452" font-size="14" fill="#0f172a">this chat thread and that pull request are the same work — and nothing inside any one of them.</text>
+            </svg>
+          </div>
+          <figcaption>Split by what must stay responsive, not by what is most capable. The Router is the only thing a human addresses, so it is the only thing that must never be busy.</figcaption>
+        </figure>
+
+        <p>
+          The important part is the yellow strip at the bottom of that diagram: the Router never breaks a task into steps. It manages the relationship <em>between</em> tasks — recognising that a chat thread from Tuesday and a pull request comment today are the same piece of work — and nothing inside any one of them. That is deliberately a smaller job than a manager agent does. The smaller the job, the easier it is to keep the Router fast.
+        </p>
+
+        <p>
+          It's a real divergence from how the better-known harnesses do it. In <a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noopener">Claude Code's agent teams</a>, the lead both decomposes the work and coordinates it, and the lead is a session — one team per session, lead fixed for its lifetime, gone when the session ends. <a href="https://developers.openai.com/codex/integrations/github" target="_blank" rel="noopener">Codex</a> has no resident coordinator between triggers at all — each GitHub event starts its own task. DeepSeek's Router is a long-lived process that outlives any individual task, which is exactly what lets it connect two events that arrived a day apart.
+        </p>
+
+        <p>
+          <strong>What it cost.</strong> An extra hop on every exchange, and a Router that cannot verify what a Worker claims it did — it only has the report. Any real check on work quality has to live somewhere else, which is part of why they ended up needing a separate watchdog process.
+        </p>
+
+        <div class="callout ok">
+          <span class="label">The skill</span>
+          <p style="margin:0">
+            Split systems by what must stay responsive, not by what is most capable. The part that answers humans and the part that does heavy work have opposite requirements. One component serving both will always sacrifice the first one, and it will do it exactly when you're under load and need it most.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="filter">
+        <h2 id="filter">4. Don't let the model decide what to look at</h2>
+
+        <p>
+          <strong>The situation.</strong> Once the agent listens to group chat, email, CI output and PR comments, the input is a firehose and almost all of it is irrelevant. A few hundred messages might contain twenty real requests.
+        </p>
+
+        <p>
+          <strong>The hype answer.</strong> Let the model read everything and judge. It understands context — that's the entire point of using one.
+        </p>
+
+        <p>
+          Correct, and unaffordable. Every event becomes an inference call. Cost now scales with how chatty the team is rather than with how much work there is, and latency rises with the volume of the busiest channel.
+        </p>
+
+        <p>
+          <strong>What they did.</strong> Two stages, cheapest first.
+        </p>
+
+        <figure class="wide">
+          <div class="diagram" role="region" tabindex="0" aria-label="Two-stage event filter">
+            <svg viewBox="0 0 1100 300" xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,system-ui,sans-serif; display:block; width:100%; height:auto;" role="img" aria-label="Many raw events pass through a programmatic filter using source, group and allowlist, then a smaller number reach an LLM that judges them against written policy, leaving a few accepted work items.">
+              <defs>
+                <marker id="ff-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+                </marker>
+                <filter id="ff-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.08"/>
+                </filter>
+              </defs>
+
+              <text x="12" y="18" font-size="13" font-weight="600" fill="#475569" letter-spacing="1.5">ADMISSION CONTROL</text>
+
+              <g filter="url(#ff-shadow)">
+                <rect x="24" y="52" width="180" height="150" rx="10" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="114" y="104" text-anchor="middle" font-size="30" font-weight="800" fill="#0f172a">~300</text>
+                <text x="114" y="130" text-anchor="middle" font-size="14" fill="#475569">raw events</text>
+                <text x="114" y="152" text-anchor="middle" font-size="12.5" fill="#64748b">chat · email · CI</text>
+                <text x="114" y="172" text-anchor="middle" font-size="12.5" fill="#64748b">PR comments</text>
+              </g>
+
+              <path d="M 210 127 L 268 127" stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#ff-arrow)"/>
+
+              <g filter="url(#ff-shadow)">
+                <rect x="274" y="52" width="252" height="150" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
+                <text x="400" y="86" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Stage 1 · plain code</text>
+                <line x1="296" y1="100" x2="504" y2="100" stroke="#cbd5e1" stroke-width="1"/>
+                <text x="400" y="124" text-anchor="middle" font-size="13.5" fill="#475569">source · group · allowlist</text>
+                <text x="400" y="148" text-anchor="middle" font-size="13.5" fill="#475569">no model · no token cost</text>
+                <text x="400" y="178" text-anchor="middle" font-size="14" font-weight="700" fill="#15803d">~0 ms, ~$0 per event</text>
+              </g>
+
+              <path d="M 532 127 L 590 127" stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#ff-arrow)"/>
+
+              <g filter="url(#ff-shadow)">
+                <rect x="596" y="52" width="252" height="150" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.6"/>
+                <text x="722" y="86" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Stage 2 · the model</text>
+                <line x1="618" y1="100" x2="826" y2="100" stroke="#bfdbfe" stroke-width="1"/>
+                <text x="722" y="124" text-anchor="middle" font-size="13.5" fill="#475569">judges against written policy</text>
+                <text x="722" y="148" text-anchor="middle" font-size="13.5" fill="#475569">is this a request? for us?</text>
+                <text x="722" y="178" text-anchor="middle" font-size="14" font-weight="700" fill="#2563eb">one inference per candidate</text>
+              </g>
+
+              <path d="M 854 127 L 912 127" stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#ff-arrow)"/>
+
+              <g filter="url(#ff-shadow)">
+                <rect x="918" y="52" width="158" height="150" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
+                <text x="997" y="104" text-anchor="middle" font-size="30" font-weight="800" fill="#0f172a">~20</text>
+                <text x="997" y="130" text-anchor="middle" font-size="14" fill="#475569">work items</text>
+                <text x="997" y="152" text-anchor="middle" font-size="12.5" fill="#15803d">each records the</text>
+                <text x="997" y="170" text-anchor="middle" font-size="12.5" fill="#15803d">policy version used</text>
+              </g>
+
+              <rect x="274" y="226" width="252" height="52" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.2"/>
+              <text x="400" y="248" text-anchor="middle" font-size="13" font-weight="700" fill="#b91c1c">The silent failure mode</text>
+              <text x="400" y="268" text-anchor="middle" font-size="12.5" fill="#0f172a">drops here are never seen by a model</text>
+              <path d="M 400 206 L 400 222" stroke="#dc2626" stroke-width="1.4" fill="none" stroke-dasharray="4 3" marker-end="url(#ff-arrow)"/>
+            </svg>
+          </div>
+          <figcaption>Cheap filter in front of the expensive one. Counts are illustrative of the shape, not measured: the point is that stage 1 costs nothing per event and stage 2 costs an inference, so the ratio between them is the whole economics of the system.</figcaption>
+        </figure>
+
+        <p>
+          First a programmatic filter: source, group, allowlist. Ordinary code, no model, no cost. Only what survives reaches an LLM, which judges the remaining candidates against a written policy — is this a request, is it addressed to us, does a team rule permit acting on it.
+        </p>
+
+        <p>
+          The policy is explicit rather than vibes. In the <a href="https://github.com/deepseek-ai/dsh-superagent-prototype" target="_blank" rel="noopener">prototype's docs</a>, accept modes are <code>off</code>, <code>observe</code> (the default) and <code>auto</code>. An explicit request must come from an allowlisted person, and bots cannot make one. Anything merely <em>inferred</em> needs a matching written rule. And each accepted item records the policy version it was accepted under, so six months later you can answer why the system thought it was allowed to do that.
+        </p>
+
+        <p>
+          <strong>What it cost.</strong> The cheap stage is silent. Anything it drops is dropped without a model ever seeing it, and nobody is told. A misconfigured allowlist and an idle system look identical from the outside.
+        </p>
+
+        <div class="callout ok">
+          <span class="label">The skill</span>
+          <p style="margin:0">
+            Put the cheap filter in front of the expensive one. This is unremarkable in any other kind of system and routinely skipped in agent systems, where the model gets treated as the first line of defence rather than the last. Deciding what deserves attention is work that code does better, cheaper and more predictably than inference.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="bypass">
+        <h2 id="bypass">5. When something is a bottleneck, take it out of the path</h2>
+
+        <p>
+          <strong>The situation.</strong> The Router sees everything, so everything waits on it. A follow-up comment on a pull request that a Worker is already handling still goes to the Router, which has to work out what it is and route it. As volume rises, one component gates the whole system.
+        </p>
+
+        <p>
+          <strong>The hype answer.</strong> Make the Router faster. Stronger model, more instances, shard it by repository.
+        </p>
+
+        <p>
+          <strong>What they did.</strong> They asked whether the Router needed to be in that path at all, and concluded it didn't.
+        </p>
+
+        <p>
+          Related events form a <strong>Thread</strong>: the same pull request, the same chat topic, the same email chain. The first event in a Thread creates a Worker, and that Worker <em>subscribes</em> to the Thread. Every later event goes straight to it. The Router isn't consulted, because there is nothing left for it to decide — ownership was settled when the first event arrived.
+        </p>
+
+        <figure class="wide">
+          <div class="diagram" role="region" tabindex="0" aria-label="Before and after thread subscriptions">
+            <svg viewBox="0 0 1100 362" xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,system-ui,sans-serif; display:block; width:100%; height:auto;" role="img" aria-label="Before: every follow-up event passes through the Router before reaching the Worker. After: the first event creates the Worker and later events on the same thread go directly to it.">
+              <defs>
+                <marker id="bp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+                </marker>
+                <marker id="bp-arrow-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#16a34a"/>
+                </marker>
+                <filter id="bp-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.08"/>
+                </filter>
+              </defs>
+
+              <text x="12" y="18" font-size="13" font-weight="600" fill="#b45309" letter-spacing="1.5">BEFORE · EVERY EVENT THROUGH THE ROUTER</text>
+
+              <g filter="url(#bp-shadow)">
+                <rect x="24" y="38" width="150" height="86" rx="10" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="99" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">PR #142</text>
+                <text x="99" y="92" text-anchor="middle" font-size="12.5" fill="#475569">comment 1, 2, 3…</text>
+                <text x="99" y="111" text-anchor="middle" font-size="12.5" fill="#475569">CI result</text>
+              </g>
+
+              <path d="M 180 68 L 268 72" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#bp-arrow)"/>
+              <path d="M 180 82 L 268 82" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#bp-arrow)"/>
+              <path d="M 180 96 L 268 92" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#bp-arrow)"/>
+
+              <g filter="url(#bp-shadow)">
+                <rect x="274" y="48" width="180" height="66" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.6"/>
+                <text x="364" y="76" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Router</text>
+                <text x="364" y="98" text-anchor="middle" font-size="12.5" fill="#b45309">decides again, every time</text>
+              </g>
+
+              <path d="M 460 81 L 548 81" stroke="#94a3b8" stroke-width="1.6" fill="none" marker-end="url(#bp-arrow)"/>
+
+              <g filter="url(#bp-shadow)">
+                <rect x="554" y="48" width="180" height="66" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="644" y="76" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Worker</text>
+                <text x="644" y="98" text-anchor="middle" font-size="12.5" fill="#475569">owns PR #142</text>
+              </g>
+
+              <rect x="760" y="44" width="316" height="74" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.2"/>
+              <text x="780" y="68" font-size="13" font-weight="700" fill="#b45309">Measured by turning the shortcut off:</text>
+              <text x="780" y="90" font-size="13" fill="#0f172a">Router decisions ↑ ~30%</text>
+              <text x="780" y="109" font-size="13" fill="#0f172a">cache-read tokens 23.2M → 31.8M</text>
+
+              <line x1="24" y1="152" x2="1076" y2="152" stroke="#e2e8f0" stroke-width="1"/>
+
+              <text x="12" y="184" font-size="13" font-weight="600" fill="#15803d" letter-spacing="1.5">AFTER · THREAD SUBSCRIPTIONS</text>
+
+              <g filter="url(#bp-shadow)">
+                <rect x="24" y="204" width="150" height="86" rx="10" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+                <text x="99" y="236" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">PR #142</text>
+                <text x="99" y="258" text-anchor="middle" font-size="12.5" fill="#475569">comment 1, 2, 3…</text>
+                <text x="99" y="277" text-anchor="middle" font-size="12.5" fill="#475569">CI result</text>
+              </g>
+
+              <path d="M 180 220 L 268 232" stroke="#94a3b8" stroke-width="1.6" fill="none" stroke-dasharray="5 4" marker-end="url(#bp-arrow)"/>
+              <text x="222" y="212" text-anchor="middle" font-size="11.5" fill="#64748b">first event only</text>
+
+              <g filter="url(#bp-shadow)">
+                <rect x="274" y="214" width="180" height="66" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.6"/>
+                <text x="364" y="242" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Router</text>
+                <text x="364" y="264" text-anchor="middle" font-size="12.5" fill="#2563eb">creates the Worker, then out</text>
+              </g>
+
+              <path d="M 460 247 L 548 247" stroke="#94a3b8" stroke-width="1.6" fill="none" stroke-dasharray="5 4" marker-end="url(#bp-arrow)"/>
+
+              <g filter="url(#bp-shadow)">
+                <rect x="554" y="214" width="180" height="66" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
+                <text x="644" y="242" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Worker</text>
+                <text x="644" y="264" text-anchor="middle" font-size="12.5" fill="#15803d">subscribed to the thread</text>
+              </g>
+
+              <path d="M 99 296 C 99 320 644 320 644 290" stroke="#16a34a" stroke-width="2" fill="none" marker-end="url(#bp-arrow-g)"/>
+              <text x="372" y="346" text-anchor="middle" font-size="13" font-weight="600" fill="#15803d">every later event · Router never sees it</text>
+
+              <rect x="760" y="210" width="316" height="74" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.2"/>
+              <text x="780" y="234" font-size="13" font-weight="700" fill="#b91c1c">What it costs:</text>
+              <text x="780" y="256" font-size="13" fill="#0f172a">subscriptions are many-to-many, so two</text>
+              <text x="780" y="275" font-size="13" fill="#0f172a">Workers on one PR now see each other</text>
+            </svg>
+          </div>
+          <figcaption>Routing decided once doesn't need deciding again. Turning the shortcut off left completion time essentially unchanged — the path buys coordination and tokens, not wall-clock.</figcaption>
+        </figure>
+
+        <p>
+          What makes this a good decision rather than a lucky one is that they <a href="#references">measured</a> what the shortcut was worth by turning it off. Completion time barely moved. Router decisions rose about 30%, and cache-read tokens went from 23.2M to 31.8M. So the honest claim is narrow and specific: the direct path saves coordination work and money, not latency. Plenty of teams would have shipped the same mechanism and claimed the speedup.
+        </p>
+
+        <p>
+          <strong>What it cost.</strong> Subscriptions are many-to-many. Two Workers touching the same pull request now see each other's events, so the context isolation that justified separate Workers in the first place is partly given up — at exactly the moment two agents are most likely to collide.
+        </p>
+
+        <div class="callout ok">
+          <span class="label">The skill</span>
+          <p style="margin:0">
+            Before optimising a bottleneck, ask whether the work needs to pass through it at all. A component is only a bottleneck for traffic it genuinely has to handle. Routing that was decided once does not need deciding again — and removing a hop is cheaper and more reliable than making it fast.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="load">
+        <h2 id="load">6. Measure the arrival rate before you scale anything</h2>
+
+        <p>
+          <strong>The situation.</strong> A single resident Router is a single point of contention, and every architecture review asks the same question: what happens at ten times the load?
+        </p>
+
+        <p>
+          <strong>The hype answer.</strong> Shard it now. Partition by repository, run a Router per team, build the coordination layer while you're in there. Nobody has ever been criticised for designing for scale.
+        </p>
+
+        <p>
+          <strong>What they did.</strong> They measured first — a real Router model with mock Workers, raising the event rate from about 1 to about 40 triggers per minute.
+        </p>
+
+        <p>
+          What they found is the reason measuring was worth it. Events arriving while the Router is mid-inference don't pile up as separate calls; they get injected together into the next one. So as load rises, the average batch grows — 1.0 to 2.8 — and the amortised cost of a decision <em>falls</em>, from 6.4 seconds to 1.6. Individual requests got slower (2.5s to 3.9s), but each unit of useful work got cheaper.
+        </p>
+
+        <p>
+          A component that becomes more efficient under load is not the component to shard. They concluded one Router suffices at current scale, and didn't build the partitioning layer.
+        </p>
+
+        <p>
+          <strong>What it cost.</strong> Batching trades per-request latency for throughput, so one urgent request is slower under load than it would be alone. And the result holds at roughly 40 events per minute against mock Workers. It says nothing about 400, and they don't claim it does.
+        </p>
+
+        <div class="callout ok">
+          <span class="label">The skill</span>
+          <p style="margin:0">
+            Scaling decisions need an observed arrival rate, not an imagined one. "What if it's ten times bigger" is a question, not a requirement. Measure the curve before you build for a point on it — because some components get <em>better</em> under load, and sharding those is pure cost paid against a problem you don't have.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="context">
+        <h2 id="context">7. Stop fitting context — address it instead</h2>
+
+        <p>
+          <strong>The situation.</strong> An agent that runs for days accumulates far more potentially relevant material than fits in a context window. Every harness hits this, and most hit it on day one.
+        </p>
+
+        <p>
+          <strong>The hype answer.</strong> Get a bigger window, or summarise aggressively and move on.
+        </p>
+
+        <p>
+          Both discard information, and neither tells you what was discarded. Summarisation in particular fails silently and confidently: you can't tell the difference between a fact that was never relevant and one that got compressed away two hours ago.
+        </p>
+
+        <p>
+          <strong>What they did.</strong> Two mechanisms, and both are borrowed instincts rather than new ideas.
+        </p>
+
+        <p>
+          <strong>Inline and spill.</strong> Likely-needed content goes into context directly. Content over budget is truncated and replaced with a <em>pointer</em> to the full thing. Nothing is silently dropped — it is moved somewhere and left addressable.
+        </p>
+
+        <p>
+          <strong>Chain of recall.</strong> Triggers, Threads and Workers all carry unique IDs, and every object the model recalls includes the IDs of objects related to it. The model starts from what it has and walks, one hop at a time, to what it needs — rather than being handed everything up front and asked to find the relevant part.
+        </p>
+
+        <p>
+          That is an index, and the instinct behind it is a database instinct: don't load the table, load a row and follow its foreign keys. Nothing here required anyone to think about language models at all.
+        </p>
+
+        <p>
+          <strong>What it cost.</strong> Hops are round trips, and every hop is a chance for the model to not bother taking it. Retrieval stops being a guarantee the harness provides and becomes a decision the model makes. Spill makes a loss <em>recoverable</em>; it doesn't make it impossible.
+        </p>
+
+        <div class="callout ok">
+          <span class="label">The skill</span>
+          <p style="margin:0">
+            Replace carrying with addressing. When the data doesn't fit, the first question isn't how to compress it — it's whether the consumer can fetch it on demand. That means giving things stable IDs and making relationships traversable, which is work you have to do <em>before</em> you need it, and which no amount of context window will do for you.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="unsolved">
+        <h2 id="unsolved">8. What they didn't solve</h2>
+
+        <p>
+          The most credible section of the document is the one listing what doesn't work.
+        </p>
+
+        <p>
+          Workers run commands with no approval step, as the operator's own OS user. The <a href="https://github.com/deepseek-ai/dsh-superagent-prototype" target="_blank" rel="noopener">project's docs</a> state that the blocked-command list is "defaults, not a security boundary" — an unusually plain sentence to publish about your own software. Auto-merge is off by default, and when enabled under the default instructions it is limited to approved pull requests under 200 changed lines, with the agent never enabling it as its own account.
+        </p>
+
+        <p>
+          Then the one they state and don't answer. If the cloud loop is compromised — by a breach, or by prompt injection — every connected machine goes with it. And there is still no mechanism for an agent to <em>use</em> a credential without that credential entering model context.
+        </p>
+
+        <p>
+          That is an open security hole, written down, in the launch material.
+        </p>
+
+        <p>
+          It's worth sitting with why that's a good sign rather than a bad one. A document listing only what works is a sales document, and the reader can't tell whether the gaps are absent or simply unexamined. A document that names its own unsolved problem tells you the team went looking for them. The security section is the part of this release I'd trust most, precisely because it's the part that admits the least.
+        </p>
+
+        <div class="callout ok">
+          <span class="label">The skill</span>
+          <p style="margin:0">
+            Ship the honest limitations alongside the work. An unnamed limitation doesn't disappear — it waits to be discovered by someone who trusted you. Writing it down costs a paragraph, and it's the fastest signal a reader has that you actually understood the system you built.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="skills">
+        <h2 id="skills">9. The six skills, collected</h2>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">The obvious answer</th>
+                <th scope="col">What they did</th>
+                <th scope="col">The skill</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Run more agents, add a dashboard</th>
+                <td>Made human attention the optimised quantity</td>
+                <td>The binding constraint is often the one with no metric attached</td>
+              </tr>
+              <tr>
+                <th scope="row">Make the coordinator your strongest agent</th>
+                <td>Router talks and dispatches; Workers do the work</td>
+                <td>Split by what must stay responsive, not by what is most capable</td>
+              </tr>
+              <tr>
+                <th scope="row">Let the model judge every event</th>
+                <td>Code filters first, model judges the survivors</td>
+                <td>Put the cheap filter in front of the expensive one</td>
+              </tr>
+              <tr>
+                <th scope="row">Make the bottleneck faster</th>
+                <td>Removed it from the path for thread follow-ups</td>
+                <td>Ask whether the work needs to pass through it at all</td>
+              </tr>
+              <tr>
+                <th scope="row">Shard before you're asked to</th>
+                <td>Measured the arrival curve; found batching made it cheaper</td>
+                <td>Scaling decisions need an observed arrival rate, not an imagined one</td>
+              </tr>
+              <tr>
+                <th scope="row">Bigger window, or summarise harder</th>
+                <td>Spill to pointers; IDs linking related objects</td>
+                <td>Replace carrying with addressing</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout warn">
+          <span class="label">About the evidence</span>
+          <p>
+            Every number in this article is DeepSeek's own, from a synthetic benchmark: roughly 300 messages and 20 real requests per run, five runs per setup, with the coding step replaced by a timed stub. It measures scheduling, not code quality. The only baseline was a single session with a subagent tool — not a tuned orchestrator, and not Claude Code or Codex. No third party has reproduced any of it.
+          </p>
+          <p style="margin:0">
+            Read the measurements as a team instrumenting its own system, which is what they are. The reasoning stands on its own either way, and the reasoning is the point. Sources for every figure are in <a href="#references">§10</a>.
+          </p>
+        </div>
+
+        <p>
+          Look back at that table and notice what isn't in it. Not one of those six skills is about agents.
+        </p>
+
+        <p>
+          Separate what must stay responsive. Cheap filter before the expensive one. Take the bottleneck out of the path. Measure before you scale. Address instead of carry. Publish your limitations. Every one is ordinary distributed-systems practice, the kind of thing that has been true since well before anyone deployed a language model.
+        </p>
+
+        <p>
+          So the reason this document reads as unusual isn't that agent engineering demanded new ideas. It's that most agent engineering hasn't started borrowing the old ones yet. The field is young enough that the impressive-sounding answer is still available in every conversation, and still wrong in the same, predictable, borrowable ways.
+        </p>
+
+        <p>
+          That's the opportunity, and it's a fairly comfortable one. You don't need to invent anything. You need to ask what's actually binding, resist the first answer, and write down what your choice cost you.
+        </p>
+        </section>
+
+        <section aria-labelledby="references">
+        <h2 id="references">10. References</h2>
+
+        <h3>Primary sources</h3>
+        <ul>
+          <li><a href="https://mp.weixin.qq.com/s/zoS7GlReWPhfCjENGxXCdg" target="_blank" rel="noopener">Exploring Super-agent Design</a> — DeepSeek Harness team, October 31, 2026. The design document this article reads. Published in Chinese.</li>
+          <li><a href="https://github.com/deepseek-ai/dsh-superagent-prototype" target="_blank" rel="noopener">deepseek-ai/dsh-superagent-prototype</a> — the MIT-licensed prototype. Source of the accept modes, the auto-merge limits, and the "defaults, not a security boundary" wording.</li>
+          <li><a href="https://github.com/deepseek-ai/dsh-superagent-prototype/blob/main/docs/000-philosophy.md" target="_blank" rel="noopener">docs/000-philosophy.md</a> — the design philosophy document, including the attention goal quoted in <a href="#attention">§2</a>.</li>
+          <li><a href="https://www.deepseek.com/en/harness/" target="_blank" rel="noopener">DeepSeek Harness</a> — the product the prototype runs on.</li>
+        </ul>
+
+        <h3>Secondary coverage of the design document</h3>
+        <p>
+          The essay is in Chinese and is not mirrored in full in English. The measurements quoted in <a href="#bypass">§5</a> and <a href="#load">§6</a> — p50/p95 completion times, the 23.2M → 31.8M cache-read figure, batch size 1.0 → 2.8, and 6.4s → 1.6s amortised per decision — are reported consistently across these three independent write-ups:
+        </p>
+        <ul>
+          <li><a href="https://agentspulse.github.io/tutorials/deepseek-super-agent-architecture/" target="_blank" rel="noopener">AgentsPulse — DeepSeek Super-agent: Router-Worker architecture</a>. The fullest English account of the mechanisms: thread subscriptions, inline-and-spill, chain of recall, the watchdog, and the benchmark table.</li>
+          <li><a href="https://cellcog.ai/blog/deepseek-super-agent/" target="_blank" rel="noopener">CellCog — One Router, Many Workers</a>. Useful for the critique of the evaluation. Note that CellCog sells a competing product.</li>
+          <li><a href="https://www.developersdigest.tech/blog/deepseek-dsh-superagent-router-worker-always-on-agent-2026" target="_blank" rel="noopener">Developers Digest — the always-on Router/Worker design</a>. Source for the accept modes and execution defaults as stated in the repo docs.</li>
+        </ul>
+
+        <h3>Release coverage</h3>
+        <ul>
+          <li><a href="https://thenextweb.com/news/deepseek-super-agent-open-source-coding-agent" target="_blank" rel="noopener">The Next Web — DeepSeek open-sources Super-Agent</a>, November 1, 2026.</li>
+          <li><a href="https://www.marktechpost.com/2026/11/01/deepseek-dsh-superagent-router-worker-coding-agent/" target="_blank" rel="noopener">MarkTechPost — DeepSeek open-sources dsh-superagent</a>, November 1, 2026.</li>
+        </ul>
+
+        <h3>For the comparison in §3</h3>
+        <ul>
+          <li><a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noopener">Claude Code — Orchestrate teams of Claude Code sessions</a>. The lead/teammate model, the shared task list, and the documented limitations: one team per session, lead fixed for its lifetime.</li>
+          <li><a href="https://code.claude.com/docs/en/sub-agents" target="_blank" rel="noopener">Claude Code — Create custom subagents</a>. Context isolation, per-agent model and tool allowlists, resume by ID, per-agent memory.</li>
+          <li><a href="https://code.claude.com/docs/en/cross-session-messaging" target="_blank" rel="noopener">Claude Code — Message your other sessions</a>. Prior art for agents messaging each other.</li>
+          <li><a href="https://developers.openai.com/codex/integrations/github" target="_blank" rel="noopener">OpenAI Codex — Review GitHub pull requests</a>. Automatic review, trigger configuration, and review rules in <code>AGENTS.md</code>.</li>
+        </ul>
+
+        <div class="callout warn">
+          <span class="label">A note on verification</span>
+          <p style="margin:0">
+            I read the design document through the three English write-ups listed above rather than the Chinese original, and I have not run the prototype. Where the three disagree — for example on whether the agent acts unprompted or only on an explicit request or written rule — I've said so in the text rather than picking one. Every figure in this article traces to DeepSeek's own instrumentation; none of it has been independently reproduced.
+          </p>
+        </div>
+        </section>
+
+        <section aria-labelledby="faq">
+        <h2 id="faq">11. Frequently asked questions</h2>
+
+        <div class="faq">
+          <details class="faq-item" id="faq-what">
+            <summary><h3>What is dsh-superagent?</h3></summary>
+            <p>
+              An MIT-licensed research prototype published by DeepSeek's Harness team on October 31, 2026, alongside a design document called "Exploring Super-agent Design." It is a proactive coding agent for a single GitHub repository, optionally connected to a team chat tool. DeepSeek states clearly that it is not an official product, that much of the code was agent-written, and that it differs from their internal version. Several mechanisms described in the document are not implemented in the prototype at all.
+            </p>
+          </details>
+          <details class="faq-item" id="faq-router">
+            <summary><h3>How is a Router different from an orchestrator or lead agent?</h3></summary>
+            <p>
+              An orchestrator decomposes one task into steps and coordinates them. The Router does not decompose anything. It manages the relationship <em>between</em> tasks — which Worker owns which thread, and whether two events belong to the same piece of work — and leaves everything inside a task to the Worker. Keeping that job small is what lets it run a lighter model and stay responsive (<a href="#split">§3</a>).
+            </p>
+          </details>
+          <details class="faq-item" id="faq-new">
+            <summary><h3>Is any of this new compared to Claude Code or Codex?</h3></summary>
+            <p>
+              The primitives aren't. Context-isolated workers, parallel sessions, agents messaging each other and event triggers from GitHub all already exist in both. What's different is the scheduling layer on top: a coordinator that is resident and holds state <em>across</em> tasks rather than dying with a session, admission control over a mixed stream of chat, email and CI events, and routing by thread ownership. Those three together are the contribution.
+            </p>
+          </details>
+          <details class="faq-item" id="faq-attention">
+            <summary><h3>Why treat human attention as the constraint?</h3></summary>
+            <p>
+              Because in practice it's what runs out first. A developer can follow roughly three to five agent sessions before throughput falls, and sessions don't share context, so the human is the only thing connecting them. Compute and tokens are instrumented and attention isn't, which is exactly why it loses arguments it should win (<a href="#attention">§2</a>).
+            </p>
+          </details>
+          <details class="faq-item" id="faq-adopt">
+            <summary><h3>What can I actually adopt from this?</h3></summary>
+            <p>
+              The two-stage trigger filter and thread-based routing are both portable to any harness in an afternoon, and both pay for themselves in tokens. Spill-to-pointer plus stable IDs takes longer because it's an indexing decision you have to make before you need it. The attention framing costs nothing and changes what you measure, which is usually where the real change starts.
+            </p>
+          </details>
+          <details class="faq-item" id="faq-trust">
+            <summary><h3>Should I run the prototype?</h3></summary>
+            <p>
+              Not on anything you care about, and that's DeepSeek's own position. Workers execute commands without approval as your OS user, the blocked-command list is explicitly described as a default rather than a security boundary, and the credential-isolation problem is unsolved. Read the design document; treat the code as a reference implementation rather than something to deploy.
+            </p>
+          </details>
+        </div>
+        </section>
+
+        <footer class="footer">
+          <div class="footer-author">
+            <img src="images/ilhem-bekkar.jpg" alt="" width="64" height="64" loading="lazy" decoding="async" />
+            <div>
+              <div class="footer-author-name">
+                Ilhem Bekkar
+                <a
+                  class="byline-social"
+                  href="https://www.linkedin.com/in/ilhem-bekkar-8927a11b2/"
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="LinkedIn"
+                  title="LinkedIn"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/>
+                  </svg>
+                </a>
+              </div>
+              <div class="footer-author-role">Agentic AI &amp; Optimization Engineer @ Omundu × Université Claude Bernard Lyon 1</div>
+              <div class="footer-author-blurb">
+                I build production-grade agentic systems for industry. My focus is AgentOps and the engineering lifecycle of multi-agent systems — the unglamorous plumbing that keeps agents reliable past the demo. If you want to talk graphs, agents, AgentOps, or anything in between over coffee, <a href="https://ilhembekkr.github.io/#contact">get in touch</a>.
+              </div>
+            </div>
+          </div>
+          <div class="footer-thanks">
+            Thanks for reading.
+          </div>
+        </footer>
+
+      </article>
+    </main>
+    <script>
+      // Open the FAQ item targeted by the URL hash (e.g. #faq-router).
+      function openFaqFromHash() {
+        var el = location.hash && document.getElementById(location.hash.slice(1));
+        if (el && el.classList.contains("faq-item")) el.open = true;
+      }
+      window.addEventListener("hashchange", openFaqFromHash);
+      openFaqFromHash();
+    </script>
+  </body>
+</html>
